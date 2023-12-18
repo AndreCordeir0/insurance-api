@@ -1,4 +1,4 @@
-FROM golang:1.16-alpine
+FROM golang:1.18-alpine
 
 WORKDIR "/app/insurance-api"
 
@@ -9,6 +9,5 @@ RUN go mod download
 COPY . .
 
 RUN go build -o insurance-api cmd/main.go
-
 
 CMD [ "./insurance-api" ]
