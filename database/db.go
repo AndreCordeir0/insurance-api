@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/AndreCordeir0/insurance-api/config"
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -13,17 +13,17 @@ var db *sql.DB
 
 func GetConnection() error {
 	fmt.Println("Tentando conexao...")
-	config := &config.ConfigDB{
-		DB_USER:     os.Getenv("MYSQL_USER"),
-		DB_PASSWORD: os.Getenv("MYSQL_PASSWORD"),
-		DB_HOST:     os.Getenv("MYSQL_HOST"),
-		DB_PORT:     "3306",
-		DB_NAME:     os.Getenv("MYSQL_DATABASE"),
-	}
+
 	var err error
-	configConnection := config.GetDataSorceConnectionName()
-	println(configConnection)
-	db, err = sql.Open("mysql", configConnection)
+
+	config := mysql.Config{
+		User:   os.Getenv("MYSQL_USER"),
+		Passwd: os.Getenv("MYSQL_PASSWORD"),
+		Addr:   os.Getenv("MYSQL_HOST"),
+		DBName: os.Getenv("MYSQL_DATABASE"),
+		Net:    "tcp",
+	}
+	db, err = sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		return err
 	}
