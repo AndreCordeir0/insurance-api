@@ -1,39 +1,61 @@
 package internal
 
 import (
+	"errors"
+	"fmt"
 	"log"
+	"sort"
 
 	"github.com/AndreCordeir0/insurance-api/database"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
+var (
+	house_status   []string = []string{"mortgaged", "owned"}
+	marital_status []string = []string{"married", "single"}
+)
+
+// Unica forma que encontrei para contornar : 0 -> null ao usar required
 type Insurance struct {
-	ID            int    `json:"id"`
-	Age           int    `json:"age"`
-	Income        int    `json:"income"`
-	MaritalStatus string `json:"marital_status"`
-	Dependents    int    `json:"dependents"`
+	ID            int     `json:"id"`
+	Age           *int    `json:"age" validate:"required,min=0"`
+	Income        *int    `json:"income" validate:"required,min=0"`
+	MaritalStatus string  `json:"marital_status" validate:"required"`
+	Dependents    *int    `json:"dependents" validate:"required,min=0"`
+	RiskQuestion  []int   `json:"risk_question" validate:"required"`
+	Vehicle       Vehicle `json:"vehicle" validate:"required"`
+	House         House   `json:"house" validate:"required"`
+}
+
+type Vehicle struct {
+	Year *int `json:"year" validate:"required"`
+}
+
+type House struct {
+	OwnershipStatus string `json:"ownership_status" validate:"required"`
 }
 
 func Insert(c *gin.Context) {
-	//TODO - Criar um serviço para inserir no banco de dados
-	errConnection := database.GetConnection()
-	if errConnection != nil {
-		log.Fatal("Erro ao conectar no banco de dados", errConnection)
-		panic(errConnection)
-	}
-	transaction, err := database.GetDb().Begin()
-	defer database.GetDb().Close()
-
+	databaseConnection := database.GetConnection()
+	transaction, err := databaseConnection.Begin()
+	defer databaseConnection.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	insurance := &Insurance{
-		Age:           25,
-		Dependents:    2,
-		Income:        0,
-		MaritalStatus: "not married",
+	var insurance Insurance
+
+	if err := c.ShouldBindJSON(&insurance); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	validateError := validateInsurance(&insurance)
+	if validateError != nil {
+		fmt.Println("aqui")
+		c.JSON(400, gin.H{"error": validateError.Error()})
+		return
 	}
 	result, err := transaction.Exec("INSERT INTO TB_INSURANCE (age, dependents, income, marital_status) VALUES (?, ?, ?, ?)",
 		insurance.Age, insurance.Dependents, insurance.Income, insurance.MaritalStatus)
@@ -47,26 +69,44 @@ func Insert(c *gin.Context) {
 		transaction.Rollback()
 		log.Fatal(errCommit)
 	}
-	println("Resultado", result)
-	c.JSON(200, result)
+	id, _ := result.LastInsertId()
+	c.JSON(200, id)
+}
+
+func validateInsurance(insurance *Insurance) error {
+	fmt.Println("Iniciando validação")
+	validator := validator.New()
+	fmt.Println("Criando validação")
+	err := validator.Struct(insurance)
+	fmt.Println("talvez validação")
+	if err != nil {
+		fmt.Println("Erro:", err)
+		return err
+	}
+	index := sort.SearchStrings(house_status, insurance.House.OwnershipStatus)
+	indexMarital := sort.SearchStrings(marital_status, insurance.MaritalStatus)
+
+	boole := (index < len(house_status) && house_status[index] == insurance.House.OwnershipStatus && index < len(marital_status) && marital_status[indexMarital] == insurance.MaritalStatus)
+	if !boole {
+		return errors.New("invalid ownership status for the house or marital status")
+	}
+	return nil
 }
 
 func GetAll(c *gin.Context) {
-	errConnection := database.GetConnection()
-	if errConnection != nil {
-		log.Fatal("Erro ao conectar no banco de dados", errConnection)
-		panic(errConnection)
-	}
-	rows, err := database.GetDb().Query("SELECT * FROM TB_INSURANCE")
-	defer rows.Close()
+	database := database.GetConnection()
+	rows, err := database.Query("SELECT * FROM TB_INSURANCE")
 	if err != nil {
 		c.JSON(500, err)
+		return
 	}
+	defer rows.Close()
 	var insurances []Insurance
 	for rows.Next() {
 		var ins Insurance
 		if err := rows.Scan(&ins.ID, &ins.Age, &ins.Dependents, &ins.Income, &ins.MaritalStatus); err != nil {
 			c.JSON(500, err)
+			return
 		}
 		insurances = append(insurances, ins)
 	}

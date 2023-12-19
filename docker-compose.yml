@@ -17,6 +17,15 @@ services:
       - "3306"
     volumes:
       - mysql_data:/var/lib/mysql
+  # migrate:
+  #   image: migrate/migrate:v4.15.2
+  #   depends_on:
+  #     - mysql
+  #   volumes:
+  #     - ./migrations:/migrations
+  #   command:
+  #    ["-path", "./migrations", "-database", "mysql://$MYSQL_USER:$MYSQL_PASSWORD@(mysql:3306)/$MYSQL_DATABASE","force", "15","-verbose","up",]
+  #   restart: on-failure
   app:
     env_file: .env
     environment:

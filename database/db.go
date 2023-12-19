@@ -3,18 +3,15 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var db *sql.DB
-
-func GetConnection() error {
+func GetConnection() *sql.DB {
 	fmt.Println("Tentando conexao...")
-
-	var err error
 
 	config := mysql.Config{
 		User:   os.Getenv("MYSQL_USER"),
@@ -23,13 +20,10 @@ func GetConnection() error {
 		DBName: os.Getenv("MYSQL_DATABASE"),
 		Net:    "tcp",
 	}
-	db, err = sql.Open("mysql", config.FormatDSN())
+	db, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
-		return err
+		log.Fatal("Erro ao conectar no banco de dados", err)
+		panic(err)
 	}
-	return nil
-}
-
-func GetDb() *sql.DB {
 	return db
 }
