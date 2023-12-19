@@ -1,3 +1,4 @@
 .env
 migrations
 .air.toml
+Makefile
