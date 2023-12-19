@@ -53,10 +53,11 @@ func Insert(c *gin.Context) {
 
 	validateError := validateInsurance(&insurance)
 	if validateError != nil {
-		fmt.Println("aqui")
 		c.JSON(400, gin.H{"error": validateError.Error()})
 		return
 	}
+	// idVehicle := insertVehicle()
+	// idHouse := insertHouse()
 	result, err := transaction.Exec("INSERT INTO TB_INSURANCE (age, dependents, income, marital_status) VALUES (?, ?, ?, ?)",
 		insurance.Age, insurance.Dependents, insurance.Income, insurance.MaritalStatus)
 	if err != nil {
@@ -73,12 +74,17 @@ func Insert(c *gin.Context) {
 	c.JSON(200, id)
 }
 
+func insertVehicle() int64 {
+
+}
+
+func insertHouse() int64 {
+
+}
+
 func validateInsurance(insurance *Insurance) error {
-	fmt.Println("Iniciando validação")
 	validator := validator.New()
-	fmt.Println("Criando validação")
 	err := validator.Struct(insurance)
-	fmt.Println("talvez validação")
 	if err != nil {
 		fmt.Println("Erro:", err)
 		return err
