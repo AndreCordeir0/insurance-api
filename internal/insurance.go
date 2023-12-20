@@ -19,6 +19,13 @@ var (
 	marital_status []string = []string{"married", "single"}
 )
 
+const (
+	Economic    = "economic"
+	Regular     = "regular"
+	Responsible = "responsible"
+	Ineligible  = "ineligible"
+)
+
 // Unica forma que encontrei para contornar : 0 -> null ao usar required
 type Insurance struct {
 	ID            int     `json:"id"`
@@ -39,6 +46,20 @@ type Vehicle struct {
 
 type House struct {
 	OwnershipStatus string `json:"ownership_status" validate:"required"`
+}
+
+type RiskScore struct {
+	Auto       string `json:"auto"`
+	Disability string `json:"disability"`
+	Home       string `json:"home"`
+	Life       string `json:"life"`
+}
+
+type RiskScoreNumber struct {
+	Auto       int
+	Disability int
+	Home       int
+	Life       int
 }
 
 func Insert(c *gin.Context) {
@@ -115,23 +136,99 @@ func validateInsurance(insurance *Insurance) error {
 	}
 	return nil
 }
+func CalculateScore(insurance *Insurance) {
+	riskSum := Sum(insurance.RiskQuestion)
+	var riskScoreNumber *RiskScoreNumber = &RiskScoreNumber{
+		Auto:       riskSum,
+		Disability: riskSum,
+		Home:       riskSum,
+		Life:       riskSum,
+	}
+	//TODO
+	// If the user has dependents, add 1 risk point to both the disability and life scores.
+	// If the user is married, add 1 risk point to the life score and remove 1 risk point from disability.
+	// If the user's vehicle was produced in the last 5 years, add 1 risk point to that vehicle’s score.
+	var riskScore *RiskScore = &RiskScore{}
+	DetermineInsuranceEligibility(insurance, riskScore)
+	DetermineAgeEligibility(insurance, riskScore, riskScoreNumber)
+	DetermineIncomeEligibility(insurance, riskScoreNumber)
+	DetermineHouseEligibility(insurance, riskScoreNumber)
+	DetermineIncomeEligibility(insurance, riskScoreNumber)
+	DetermineIncomeEligibility(insurance, riskScoreNumber)
 
-func GetAll(c *gin.Context) {
-	database := database.GetConnection()
-	rows, err := database.Query("SELECT * FROM TB_INSURANCE")
-	if err != nil {
-		c.JSON(500, err.Error())
-		return
+}
+
+func DetermineInsuranceEligibility(insurance *Insurance, riskScore *RiskScore) {
+	// Implemented - If the user doesn’t have income, vehicles or houses, she is ineligible for disability, auto, and home insurance, respectively.
+	if *insurance.Income == 0 {
+		riskScore.Disability = Ineligible
 	}
-	defer rows.Close()
-	var insurances []Insurance
-	for rows.Next() {
-		var ins Insurance
-		if err := rows.Scan(&ins.ID, &ins.Age, &ins.Dependents, &ins.Income, &ins.MaritalStatus, &ins.IdVehicle, &ins.IdHouse); err != nil {
-			c.JSON(500, err.Error())
-			return
-		}
-		insurances = append(insurances, ins)
+	if insurance.Vehicle == (Vehicle{}) {
+		riskScore.Auto = Ineligible
 	}
-	c.JSON(200, insurances)
+	if insurance.House == (House{}) {
+		riskScore.Home = Ineligible
+	}
+}
+
+func DetermineAgeEligibility(insurance *Insurance, riskScore *RiskScore, riskScoreNumber *RiskScoreNumber) {
+	age := *insurance.Age
+	// Implemented - If the user is over 60 years old, she is ineligible for disability and life insurance.
+	if age > 60 {
+		riskScore.Disability = Ineligible
+		riskScore.Life = Ineligible
+	}
+
+	// Implemented - If the user is under 30 years old, deduct 2 risk points from all lines of insurance. If she is between 30 and 40 years old, deduct 1.
+	if age < 30 {
+		riskScoreNumber.Auto = riskScoreNumber.Auto - 2
+		riskScoreNumber.Disability = riskScoreNumber.Disability - 2
+		riskScoreNumber.Home = riskScoreNumber.Home - 2
+		riskScoreNumber.Life = riskScoreNumber.Life - 2
+	} else if age >= 30 && age <= 40 {
+		riskScoreNumber.Auto = riskScoreNumber.Auto - 1
+		riskScoreNumber.Disability = riskScoreNumber.Disability - 1
+		riskScoreNumber.Home = riskScoreNumber.Home - 1
+		riskScoreNumber.Life = riskScoreNumber.Life - 1
+	}
+}
+func DetermineIncomeEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
+	// Implemented - If her income is above $200k, deduct 1 risk point from all lines of insurance.
+	income := *insurance.Income
+	if income > 200000 {
+		riskScoreNumber.Auto = riskScoreNumber.Auto - 1
+		riskScoreNumber.Disability = riskScoreNumber.Disability - 1
+		riskScoreNumber.Home = riskScoreNumber.Home - 1
+		riskScoreNumber.Life = riskScoreNumber.Life - 1
+	}
+}
+
+func DetermineHouseEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
+	// If the user's house is mortgaged, add 1 risk point to her home score and add 1 risk point to her disability score.
+	isMortgated := house_status[0]
+	if (House{}) != insurance.House && insurance.House.OwnershipStatus == isMortgated {
+		riskScoreNumber.Home = riskScoreNumber.Home - 1
+		riskScoreNumber.Disability = riskScoreNumber.Home - 1
+	}
+}
+
+//TODO func deduct all income points
+
+func Sum(array []int) int {
+	var sum int
+	for _, item := range array {
+		sum += item
+	}
+	return sum
+}
+
+func GetPontuation(score int8) string {
+	switch score {
+	case 0:
+		return Economic
+	case 1, 2:
+		return Regular
+	default:
+		return Responsible
+	}
 }

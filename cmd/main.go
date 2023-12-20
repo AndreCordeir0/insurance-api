@@ -10,6 +10,5 @@ import (
 func main() {
 	r := gin.Default()
 	r.POST("/teste", internal.Insert)
-	r.GET("/teste", internal.GetAll)
 	r.Run(":8080")
 }
