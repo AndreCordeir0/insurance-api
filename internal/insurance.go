@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/AndreCordeir0/insurance-api/database"
 	"github.com/AndreCordeir0/insurance-api/utils"
@@ -33,7 +34,7 @@ type Insurance struct {
 	Income        *int    `json:"income" validate:"required,min=0"`
 	MaritalStatus string  `json:"marital_status" validate:"required"`
 	Dependents    *int    `json:"dependents" validate:"required,min=0"`
-	RiskQuestion  []int   `json:"risk_question" validate:"required"`
+	RiskQuestion  []int   `json:"risk_questions" validate:"required"`
 	Vehicle       Vehicle `json:"vehicle" validate:"required"`
 	House         House   `json:"house" validate:"required"`
 	IdVehicle     int     `json:"-"`
@@ -62,7 +63,23 @@ type RiskScoreNumber struct {
 	Life       int
 }
 
-func Insert(c *gin.Context) {
+func InsuranceRiskEstimated(c *gin.Context) {
+	var insurance Insurance
+	if err := c.ShouldBindJSON(&insurance); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	validateError := validateInsurance(&insurance)
+	if validateError != nil {
+		c.JSON(400, gin.H{"error": validateError.Error()})
+		return
+	}
+	riskScore := CalculateScore(&insurance)
+
+	c.JSON(http.StatusOK, riskScore)
+}
+
+func Insert(insurance *Insurance, c *gin.Context) {
 	databaseConnection := database.GetConnection()
 	transaction, err := databaseConnection.Begin()
 	defer databaseConnection.Close()
@@ -72,20 +89,8 @@ func Insert(c *gin.Context) {
 		log.Fatal(err)
 	}
 
-	var insurance Insurance
-
-	if err := c.ShouldBindJSON(&insurance); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	validateError := validateInsurance(&insurance)
-	if validateError != nil {
-		c.JSON(400, gin.H{"error": validateError.Error()})
-		return
-	}
-	idVehicle, vehicleError := insertVehicle(&insurance, transaction)
-	idHouse, houseError := insertHouse(&insurance, transaction)
+	idVehicle, vehicleError := insertVehicle(insurance, transaction)
+	idHouse, houseError := insertHouse(insurance, transaction)
 	if vehicleError != nil {
 		c.JSON(400, gin.H{"error": vehicleError.Error()})
 		return
@@ -106,11 +111,10 @@ func Insert(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 	}
 	id, _ := result.LastInsertId()
-	c.JSON(200, id)
+	fmt.Println(id)
 }
 
 func insertVehicle(insurance *Insurance, transaction *sql.Tx) (int64, error) {
-	println(*insurance.Vehicle.Year)
 	id, err := utils.AbstractInsert[int]("TB_VEHICLE", []string{"year"}, []int{*insurance.Vehicle.Year}, transaction)
 	return id, err
 }
@@ -134,9 +138,14 @@ func validateInsurance(insurance *Insurance) error {
 	if !boole {
 		return errors.New("invalid ownership status for the house or marital status")
 	}
+	for i := 0; i < len(insurance.RiskQuestion); i++ {
+		if insurance.RiskQuestion[i] != 0 && insurance.RiskQuestion[i] != 1 {
+			return errors.New("invalid value in risk_question")
+		}
+	}
 	return nil
 }
-func CalculateScore(insurance *Insurance) {
+func CalculateScore(insurance *Insurance) *RiskScore {
 	riskSum := Sum(insurance.RiskQuestion)
 	var riskScoreNumber *RiskScoreNumber = &RiskScoreNumber{
 		Auto:       riskSum,
@@ -145,17 +154,36 @@ func CalculateScore(insurance *Insurance) {
 		Life:       riskSum,
 	}
 	//TODO
-	// If the user has dependents, add 1 risk point to both the disability and life scores.
-	// If the user is married, add 1 risk point to the life score and remove 1 risk point from disability.
-	// If the user's vehicle was produced in the last 5 years, add 1 risk point to that vehicle’s score.
 	var riskScore *RiskScore = &RiskScore{}
 	DetermineInsuranceEligibility(insurance, riskScore)
 	DetermineAgeEligibility(insurance, riskScore, riskScoreNumber)
 	DetermineIncomeEligibility(insurance, riskScoreNumber)
 	DetermineHouseEligibility(insurance, riskScoreNumber)
-	DetermineIncomeEligibility(insurance, riskScoreNumber)
-	DetermineIncomeEligibility(insurance, riskScoreNumber)
+	DetermineDependentsEligibility(insurance, riskScoreNumber)
+	DetermineMarriedEligibility(insurance, riskScoreNumber)
+	DetermineVehicleEligibility(insurance, riskScoreNumber)
 
+	return determinateRisk(riskScore, riskScoreNumber)
+}
+
+func determinateRisk(riskScore *RiskScore, riskScoreNumber *RiskScoreNumber) *RiskScore {
+	// This algorithm results in a final score for each line of insurance, which should be processed using the following ranges:
+	// 0 and below maps to “economic”.
+	// 1 and 2 maps to “regular”.
+	// 3 and above maps to “responsible”.
+	if riskScore.Auto != Ineligible {
+		riskScore.Auto = GetPontuation(riskScoreNumber.Auto)
+	}
+	if riskScore.Disability != Ineligible {
+		riskScore.Disability = GetPontuation(riskScoreNumber.Disability)
+	}
+	if riskScore.Home != Ineligible {
+		riskScore.Home = GetPontuation(riskScoreNumber.Home)
+	}
+	if riskScore.Life != Ineligible {
+		riskScore.Life = GetPontuation(riskScoreNumber.Life)
+	}
+	return riskScore
 }
 
 func DetermineInsuranceEligibility(insurance *Insurance, riskScore *RiskScore) {
@@ -204,11 +232,36 @@ func DetermineIncomeEligibility(insurance *Insurance, riskScoreNumber *RiskScore
 }
 
 func DetermineHouseEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
-	// If the user's house is mortgaged, add 1 risk point to her home score and add 1 risk point to her disability score.
+	// Implemented - If the user's house is mortgaged, add 1 risk point to her home score and add 1 risk point to her disability score.
 	isMortgated := house_status[0]
 	if (House{}) != insurance.House && insurance.House.OwnershipStatus == isMortgated {
-		riskScoreNumber.Home = riskScoreNumber.Home - 1
-		riskScoreNumber.Disability = riskScoreNumber.Home - 1
+		riskScoreNumber.Home = riskScoreNumber.Home + 1
+		riskScoreNumber.Disability = riskScoreNumber.Disability + 1
+	}
+}
+
+func DetermineDependentsEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
+	// Implemented - If the user has dependents, add 1 risk point to both the disability and life scores.
+	if *insurance.Dependents != 0 {
+		riskScoreNumber.Life = riskScoreNumber.Life + 1
+		riskScoreNumber.Disability = riskScoreNumber.Disability + 1
+	}
+}
+
+func DetermineMarriedEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
+	// Implemented - If the user is married, add 1 risk point to the life score and remove 1 risk point from disability.
+	isMarried := marital_status[0]
+	if insurance.MaritalStatus == isMarried {
+		riskScoreNumber.Life = riskScoreNumber.Life + 1
+		riskScoreNumber.Disability = riskScoreNumber.Disability - 1
+	}
+}
+
+func DetermineVehicleEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
+	// Implemented - If the user's vehicle was produced in the last 5 years, add 1 risk point to that vehicle’s score.
+	actualYear := time.Now().Year()
+	if (Vehicle{}) != insurance.Vehicle && (actualYear-*insurance.Vehicle.Year) <= 5 {
+		riskScoreNumber.Auto = riskScoreNumber.Auto + 1
 	}
 }
 
@@ -222,7 +275,7 @@ func Sum(array []int) int {
 	return sum
 }
 
-func GetPontuation(score int8) string {
+func GetPontuation(score int) string {
 	switch score {
 	case 0:
 		return Economic
