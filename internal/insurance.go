@@ -1,12 +1,15 @@
 package internal
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"sort"
 
 	"github.com/AndreCordeir0/insurance-api/database"
+	"github.com/AndreCordeir0/insurance-api/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 )
@@ -26,6 +29,8 @@ type Insurance struct {
 	RiskQuestion  []int   `json:"risk_question" validate:"required"`
 	Vehicle       Vehicle `json:"vehicle" validate:"required"`
 	House         House   `json:"house" validate:"required"`
+	IdVehicle     int     `json:"-"`
+	IdHouse       int     `json:"-"`
 }
 
 type Vehicle struct {
@@ -40,6 +45,8 @@ func Insert(c *gin.Context) {
 	databaseConnection := database.GetConnection()
 	transaction, err := databaseConnection.Begin()
 	defer databaseConnection.Close()
+	//Pequeno truque para rollback, se o commit já houver sido confirmado o rollback não é feito (:
+	defer transaction.Rollback()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,30 +63,40 @@ func Insert(c *gin.Context) {
 		c.JSON(400, gin.H{"error": validateError.Error()})
 		return
 	}
-	// idVehicle := insertVehicle()
-	// idHouse := insertHouse()
-	result, err := transaction.Exec("INSERT INTO TB_INSURANCE (age, dependents, income, marital_status) VALUES (?, ?, ?, ?)",
-		insurance.Age, insurance.Dependents, insurance.Income, insurance.MaritalStatus)
+	idVehicle, vehicleError := insertVehicle(&insurance, transaction)
+	idHouse, houseError := insertHouse(&insurance, transaction)
+	if vehicleError != nil {
+		c.JSON(400, gin.H{"error": vehicleError.Error()})
+		return
+	}
+	if houseError != nil {
+		c.JSON(400, gin.H{"error": houseError.Error()})
+		return
+	}
+
+	result, err := transaction.Exec("INSERT INTO TB_INSURANCE (age, dependents, income, marital_status, id_vehicle, id_house) VALUES (?, ?, ?, ?, ?, ?)",
+		insurance.Age, insurance.Dependents, insurance.Income, insurance.MaritalStatus, idVehicle, idHouse)
 	if err != nil {
-		transaction.Rollback()
-		log.Fatal(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 	}
 
 	errCommit := transaction.Commit()
 	if errCommit != nil {
-		transaction.Rollback()
-		log.Fatal(errCommit)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 	}
 	id, _ := result.LastInsertId()
 	c.JSON(200, id)
 }
 
-func insertVehicle() int64 {
-
+func insertVehicle(insurance *Insurance, transaction *sql.Tx) (int64, error) {
+	println(*insurance.Vehicle.Year)
+	id, err := utils.AbstractInsert[int]("TB_VEHICLE", []string{"year"}, []int{*insurance.Vehicle.Year}, transaction)
+	return id, err
 }
 
-func insertHouse() int64 {
-
+func insertHouse(insurance *Insurance, transaction *sql.Tx) (int64, error) {
+	id, err := utils.AbstractInsert[string]("TB_HOUSE", []string{"ownership_status"}, []string{insurance.House.OwnershipStatus}, transaction)
+	return id, err
 }
 
 func validateInsurance(insurance *Insurance) error {
@@ -103,15 +120,15 @@ func GetAll(c *gin.Context) {
 	database := database.GetConnection()
 	rows, err := database.Query("SELECT * FROM TB_INSURANCE")
 	if err != nil {
-		c.JSON(500, err)
+		c.JSON(500, err.Error())
 		return
 	}
 	defer rows.Close()
 	var insurances []Insurance
 	for rows.Next() {
 		var ins Insurance
-		if err := rows.Scan(&ins.ID, &ins.Age, &ins.Dependents, &ins.Income, &ins.MaritalStatus); err != nil {
-			c.JSON(500, err)
+		if err := rows.Scan(&ins.ID, &ins.Age, &ins.Dependents, &ins.Income, &ins.MaritalStatus, &ins.IdVehicle, &ins.IdHouse); err != nil {
+			c.JSON(500, err.Error())
 			return
 		}
 		insurances = append(insurances, ins)
