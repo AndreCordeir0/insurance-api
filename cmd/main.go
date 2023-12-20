@@ -9,6 +9,6 @@ import (
 
 func main() {
 	r := gin.Default()
-	r.POST("/teste", internal.Insert)
+	r.POST("/insurance-risk", internal.InsuranceRiskEstimated)
 	r.Run(":8080")
 }
