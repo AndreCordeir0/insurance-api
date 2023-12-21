@@ -69,7 +69,7 @@ func InsuranceRiskEstimated(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	validateError := validateInsurance(&insurance)
+	validateError := ValidateInsurance(&insurance)
 	if validateError != nil {
 		c.JSON(400, gin.H{"error": validateError.Error()})
 		return
@@ -124,7 +124,7 @@ func insertHouse(insurance *Insurance, transaction *sql.Tx) (int64, error) {
 	return id, err
 }
 
-func validateInsurance(insurance *Insurance) error {
+func ValidateInsurance(insurance *Insurance) error {
 	validator := validator.New()
 	err := validator.Struct(insurance)
 	if err != nil {
@@ -145,6 +145,7 @@ func validateInsurance(insurance *Insurance) error {
 	}
 	return nil
 }
+
 func CalculateScore(insurance *Insurance) *RiskScore {
 	riskSum := Sum(insurance.RiskQuestion)
 	var riskScoreNumber *RiskScoreNumber = &RiskScoreNumber{
