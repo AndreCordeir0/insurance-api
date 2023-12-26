@@ -210,25 +210,16 @@ func DetermineAgeEligibility(insurance *Insurance, riskScore *RiskScore, riskSco
 
 	// Implemented - If the user is under 30 years old, deduct 2 risk points from all lines of insurance. If she is between 30 and 40 years old, deduct 1.
 	if age < 30 {
-		riskScoreNumber.Auto = riskScoreNumber.Auto - 2
-		riskScoreNumber.Disability = riskScoreNumber.Disability - 2
-		riskScoreNumber.Home = riskScoreNumber.Home - 2
-		riskScoreNumber.Life = riskScoreNumber.Life - 2
+		deductAllIncomePoints(riskScoreNumber, 2)
 	} else if age >= 30 && age <= 40 {
-		riskScoreNumber.Auto = riskScoreNumber.Auto - 1
-		riskScoreNumber.Disability = riskScoreNumber.Disability - 1
-		riskScoreNumber.Home = riskScoreNumber.Home - 1
-		riskScoreNumber.Life = riskScoreNumber.Life - 1
+		deductAllIncomePoints(riskScoreNumber, 1)
 	}
 }
 func DetermineIncomeEligibility(insurance *Insurance, riskScoreNumber *RiskScoreNumber) {
 	// Implemented - If her income is above $200k, deduct 1 risk point from all lines of insurance.
 	income := *insurance.Income
 	if income > 200000 {
-		riskScoreNumber.Auto = riskScoreNumber.Auto - 1
-		riskScoreNumber.Disability = riskScoreNumber.Disability - 1
-		riskScoreNumber.Home = riskScoreNumber.Home - 1
-		riskScoreNumber.Life = riskScoreNumber.Life - 1
+		deductAllIncomePoints(riskScoreNumber, 1)
 	}
 }
 
@@ -266,7 +257,12 @@ func DetermineVehicleEligibility(insurance *Insurance, riskScoreNumber *RiskScor
 	}
 }
 
-//TODO func deduct all income points
+func deductAllIncomePoints(riskScore *RiskScoreNumber, pointsForDeduct int) {
+	riskScore.Auto = riskScore.Auto - pointsForDeduct
+	riskScore.Disability = riskScore.Disability - pointsForDeduct
+	riskScore.Home = riskScore.Home - pointsForDeduct
+	riskScore.Life = riskScore.Life - pointsForDeduct
+}
 
 func Sum(array []int) int {
 	var sum int
